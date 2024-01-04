@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.Linq;
-
 namespace Akka.Pathfinder.Layout.Tests;
 
 public class MapFactoryTests
@@ -14,13 +11,6 @@ public class MapFactoryTests
             { Direction.Top, 100 },
             { Direction.Bottom, 100 }
         }), true);
-
-        foreach (var item in mapConfig.Configs.SelectMany(x => x.Value))
-        {
-            Debug.Write($"Point: {item.Id} ");
-            Debug.Write($"Count: {item.DirectionConfigs.Count} ");
-            Debug.WriteLine($"Directions: {string.Join(",", item.DirectionConfigs.Values.Select(x => x.TargetPointId.ToString()))}");
-        }
 
         Assert.NotNull(mapConfig);
         Assert.NotEqual(Guid.Empty, mapConfig.Id);

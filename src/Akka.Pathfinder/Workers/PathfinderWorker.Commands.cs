@@ -1,29 +1,43 @@
-using Akka.Actor;
-using Akka.Pathfinder.Core;
 using Akka.Pathfinder.Core.Messages;
-using Akka.Pathfinder.Core.Services;
 using Akka.Pathfinder.Core.States;
+using Akka.Actor;
+using LanguageExt;
+using Akka.Persistence;
 
 namespace Akka.Pathfinder.Workers;
 
 public partial class PathfinderWorker
 {
-    public void FindPath(PathfinderStartRequest msg)
+    public void FindPathHandler(PathfinderStartRequest msg)
     {
-        _logger.Debug("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
+        _logger.Verbose("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
 
         _state = PathfinderWorkerState.FromRequest(msg);
-        _sender = Sender;
-        _mapManagerClient.Tell(new IsMapReady(msg.PathfinderId));
+        _senderManagerClient.Forward(new SavePathfinderSender(msg.PathfinderId));
+
+        IReadOnlyList<PathPoint> startPointList = new List<PathPoint>()
+        {
+            new(_state.SourcePointId, 0, _state.StartDirection)
+        };
+
+        var findPathRequest = new FindPathRequest(Guid.Parse(EntityId), Guid.NewGuid(), _state.SourcePointId, _state.TargetPointId, startPointList);
+        _mapManagerClient.Tell(findPathRequest, Self);
+        PersistState();
     }
 
-    public void FoundPath(PathFound msg)
+    private void FindPathRequestStarted(FindPathRequestStarted msg)
     {
-        _logger.Debug("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
+        _logger.Verbose("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
+        Context.System.Scheduler.ScheduleTellOnce(_state.Timeout, Self, new PathfinderTimeout(_state.PathfinderId), Self);
+    }
+
+    public void FoundPathHandler(PathFound msg)
+    {
+        _logger.Verbose("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
 
         switch (msg.Result)
         {
-            case PathFinderResult.Success:
+            case PathfinderResult.Success:
                 _state.IncrementFoundPathCounter();
                 break;
             default:
@@ -32,27 +46,26 @@ public partial class PathfinderWorker
         }
     }
 
-    public async Task FickDichPatrick(FickDichPatrick msg)
+    public async Task PathfinderTimeoutHandler(PathfinderTimeout msg)
     {
-        _logger.Debug("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
+        _logger.Verbose("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
         Become(WhilePathEvaluation);
         Context.System.EventStream.Publish(new PathfinderDeactivated(_state.PathfinderId));
 
         if (!_state.HasPathFound)
         {
             _logger.Debug("[{PathfinderId}] No Paths found for Path: [{SourcePointId}] -> [{TargetPointId}]", EntityId, _state.SourcePointId, _state.TargetPointId);
-            Sender.Tell(new PathFinderDone(msg.PathfinderId, Guid.Empty, false, "Frag mich doch nicht"));
+            _senderManagerClient.Tell(new ForwardToPathfinderSender(msg.PathfinderId, new PathFinderDone(msg.PathfinderId, Guid.Empty, false, "Frag mich doch nicht")));
             Become(Void);
             Stash.UnstashAll();
             return;
         }
 
         _logger.Debug("[{PathfinderId}] {PathsCount} Paths found for Path: [{SourcePointId}] -> [{TargetPointId}]", EntityId, _state.Count, _state.SourcePointId, _state.TargetPointId);
-        using var scope = _serviceScopeFactory.CreateScope();
-        var pathReader = scope.ServiceProvider.GetRequiredService<IPathReader>();
-        await pathReader
+
+        await _pathReader
         .GetByPathfinderIdAsync(msg.PathfinderId)
-        .PipeTo(Self, Sender,
+        .PipeTo(Self, Self,
         result =>
         {
             var paths = result.ToList();
@@ -63,28 +76,17 @@ public partial class PathfinderWorker
         ex => new BestPathFailed(msg.PathfinderId, ex));
     }
 
-    private void MapIsReadyHandler(MapIsReady msg)
-    {
-        IReadOnlyList<PathPoint> startPointList = new List<PathPoint>()
-        {
-            new(_state.SourcePointId, 0, _state.StartDirection)
-        };
-        var findPathRequest = new FindPathRequest(Guid.Parse(EntityId), Guid.NewGuid(), _state.SourcePointId, _state.TargetPointId, startPointList);
-
-        Context.System.GetRegistry().Get<PointWorkerProxy>().Tell(findPathRequest, Self);
-
-        Context.System.Scheduler.ScheduleTellOnce(_state.Timeout, Self, new FickDichPatrick(_state.PathfinderId), _sender);
-    }
-
     public void BestPathFoundHandler(BestPathFound msg)
     {
+        _logger.Verbose("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
         Become(Void);
         Stash.UnstashAll();
-        Sender.Tell(new PathFinderDone(msg.PathfinderId, msg.PathId, true));
+        _senderManagerClient.Tell(new ForwardToPathfinderSender(msg.PathfinderId, new PathFinderDone(msg.PathfinderId, msg.PathId, true)));
     }
 
     public void BestPathFailedHandler(BestPathFailed msg)
     {
+        _logger.Verbose("[{PathfinderId}][{MessageType}] received", EntityId, msg.GetType().Name);
         Become(Void);
         Stash.UnstashAll();
         if (msg.Exception is not null)
@@ -94,4 +96,12 @@ public partial class PathfinderWorker
 
         Sender.Tell(new PathFinderDone(msg.PathfinderId, Guid.Empty, false, "Frag mich doch nicht"));
     }
+
+    private void SaveSnapshotFailureHandler(SaveSnapshotFailure msg)
+    => _logger.Error("[{PathfinderId}] failed to create snapshot [{SequenceNr}]",
+            EntityId, msg.Metadata.SequenceNr);
+
+    private void SaveSnapshotSuccessHandler(SaveSnapshotSuccess msg)
+        => _logger.Information("[{PathfinderId}] successfully create snapshot [{SequenceNr}]",
+                EntityId, msg.Metadata.SequenceNr);
 }

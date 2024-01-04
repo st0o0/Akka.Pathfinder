@@ -33,8 +33,6 @@ public class EnvironmentSetupHooks
         await mongoTask;
         await postgreTask;
 
-        await AkkaDriver.InitializeAsync();
-
         var mongoDBString = MongoDbContainer.GetConnectionString();
         var postgreSQLString = PostgreContainer.GetConnectionString();
 
@@ -43,10 +41,13 @@ public class EnvironmentSetupHooks
         AkkaPathfinder.SetEnvironmentVariable("mongodb", mongoDBString);
         AkkaPathfinder.SetEnvironmentVariable("postgre", postgreSQLString);
 
+        AkkaDriver = new();
+        await AkkaDriver.InitializeAsync();
+
         PathfinderApplicationFactory = new();
         await PathfinderApplicationFactory.InitializeAsync();
 
-        await Task.Delay(2500);
+        await Task.Delay(5000);
     }
 
     [AfterScenario]
@@ -58,28 +59,17 @@ public class EnvironmentSetupHooks
         Log.Information("[TEST][EnvironmentSetupHooks][AfterFeature]");
 
         await PathfinderApplicationFactory.DisposeAsync();
-        PathfinderApplicationFactory = null!;
+        await AkkaDriver.DisposeAsync();
         await MongoDbContainer.DisposeAsync();
-        MongoDbContainer = null!;
         await PostgreContainer.DisposeAsync();
-        PostgreContainer = null!;
         await SeedNodeContainer.DisposeAsync();
-        SeedNodeContainer = null!;
+        await Task.Delay(2500);
     }
 
     [AfterTestRun]
-    public static async Task AfterTestRun()
+    public static void AfterTestRun()
     {
         Log.Information("[TEST][EnvironmentSetupHooks][AfterFeature]");
-
-        await (PathfinderApplicationFactory?.DisposeAsync() ?? ValueTask.CompletedTask);
-        PathfinderApplicationFactory = null!;
-        await (MongoDbContainer?.DisposeAsync() ?? Task.CompletedTask);
-        MongoDbContainer = null!;
-        await (PostgreContainer?.DisposeAsync() ?? Task.CompletedTask);
-        PostgreContainer = null!;
-        await (SeedNodeContainer?.DisposeAsync() ?? Task.CompletedTask);
-        SeedNodeContainer = null!;
     }
 
     private static ILogger CreateLogger()

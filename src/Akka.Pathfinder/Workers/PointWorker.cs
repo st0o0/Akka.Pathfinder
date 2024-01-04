@@ -1,10 +1,9 @@
-﻿using Akka.Pathfinder.Core.Configs;
+﻿using Akka.Pathfinder.Core.Services;
 using Akka.Pathfinder.Core.Messages;
-using Akka.Persistence;
+using Akka.Pathfinder.Core.Configs;
 using Akka.Pathfinder.Core.States;
+using Akka.Persistence;
 using Akka.Actor;
-using Akka.Cluster.Sharding;
-using Akka.Pathfinder.Core;
 
 namespace Akka.Pathfinder.Workers;
 
@@ -14,17 +13,19 @@ public partial class PointWorker : ReceivePersistentActor
 {
     public override string PersistenceId => $"PointWorker_{EntityId}";
     public string EntityId;
+
+    private readonly IPointConfigReader _pointConfigReader;
+    private readonly IPathWriter _pathWriter;
+    private readonly Serilog.ILogger _logger = Serilog.Log.Logger.ForContext<PointWorker>();
     private PointWorkerState _state = null!;
 
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly Serilog.ILogger _logger = Serilog.Log.Logger.ForContext<PointWorker>();
-    private readonly IActorRef _mapManagerClient = ActorRefs.Nobody;
-    public PointWorker(string entityId, IServiceProvider serviceProvider)
+    public PointWorker(string entityId, IServiceScopeFactory serviceScopeFactory)
     {
-        Context.SetReceiveTimeout(TimeSpan.FromSeconds(20));
         EntityId = entityId;
-        _serviceScopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        _mapManagerClient = Context.System.GetRegistry().Get<MapManagerProxy>();
+        using var scope = serviceScopeFactory.CreateScope();
+        var provider = scope.ServiceProvider;
+        _pointConfigReader = provider.GetRequiredService<IPointConfigReader>();
+        _pathWriter = provider.GetRequiredService<IPathWriter>();
 
         var result = Context.System.EventStream.Subscribe(Self, typeof(PathfinderDeactivated));
         if (!result)
@@ -33,6 +34,7 @@ public partial class PointWorker : ReceivePersistentActor
         }
 
         Recover<SnapshotOffer>(RecoverSnapshotOffer);
+        CommandAny(msg => Stash.Stash());
     }
 
     protected override void OnReplaySuccess()
@@ -47,6 +49,13 @@ public partial class PointWorker : ReceivePersistentActor
         {
             Become(Initialize);
         }
+    }
+
+    private void OnConfigure()
+    {
+        _pointConfigReader
+        .Get(_state.CollectionId, _state.PointId)
+        .PipeTo(Self, Self, config => config is not null ? new LocalPointConfig(config) : new LocalPointConfig(null!));
     }
 
     protected override void PreRestart(Exception reason, object message)
