@@ -11,12 +11,10 @@ public interface IPointConfigReader
     public Task<PointConfig?> Get(Guid collectionId, int pointId, CancellationToken cancellationToken = default);
 }
 
-public class PointConfigReader : IPointConfigReader
+public class PointConfigReader(IMongoDatabase database) : IPointConfigReader
 {
-    protected IMongoDatabase Database { get; init; }
-    public PointConfigReader(IMongoDatabase database) 
-        => Database = database;
-    
+    protected IMongoDatabase Database { get; init; } = database;
+
     private IMongoCollection<PointConfig> GetCollection(Guid collectionId)
         => Database.GetCollection<PointConfig>(collectionId.ToString());
 

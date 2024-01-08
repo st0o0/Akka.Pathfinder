@@ -10,12 +10,9 @@ public interface IMapConfigReader
     Task<MapConfig> GetAsync(Guid mapId, CancellationToken cancellationToken = default);
 }
 
-public class MapConfigReader : IMapConfigReader
+public class MapConfigReader(IMongoCollection<MapConfig> collection) : IMapConfigReader
 {
-    public MapConfigReader(IMongoCollection<MapConfig> collection)
-        => Collection = collection;
-
-    protected IMongoCollection<MapConfig> Collection { get; }
+    protected IMongoCollection<MapConfig> Collection { get; } = collection;
 
     public IMongoQueryable<MapConfig> Get()
         => Collection.AsQueryable();

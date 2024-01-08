@@ -1,4 +1,6 @@
-﻿namespace Akka.Pathfinder.Core.Messages;
+﻿using Moin.Core;
+
+namespace Akka.Pathfinder.Core.Messages;
 
 public interface IPointId : IEntityId
 {

@@ -82,11 +82,23 @@ public record PointWorkerState
 
     internal bool UpdateDirectionCost(DirectionCommit commit)
     {
+        static DirectionConfig Update(uint value, DirectionConfig config, ChangeMethod changeMethod) => changeMethod is ChangeMethod.Increase ? config.Increase(value) : config.Decrease(value);
+        var changeMethod = ((ICommit)commit).ChangeMethod;
+
+        if (commit.Direction == Direction.All)
+        {
+            List<bool> result = [];
+            foreach (var (key, value) in _directionConfigs)
+            {
+                var newItem = Update(commit.AdditionalCost, value, changeMethod);
+                result.Add(_directionConfigs.TryUpdate(key, newItem, value));
+            }
+
+            return result.All(x => x);
+        }
+
         if (!_directionConfigs.TryGetValue(commit.Direction, out var directionConfig)) return false;
 
-        static DirectionConfig Update(uint value, DirectionConfig config, ChangeMethod changeMethod) => changeMethod is ChangeMethod.Increase ? config.Increase(value) : config.Decrease(value);
-
-        var changeMethod = ((ICommit)commit).ChangeMethod;
         var newDirectionConfig = commit.Direction switch
         {
             Direction.Top => Update(commit.AdditionalCost, directionConfig, changeMethod),

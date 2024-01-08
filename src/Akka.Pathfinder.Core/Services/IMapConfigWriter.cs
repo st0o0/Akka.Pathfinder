@@ -8,11 +8,8 @@ public interface IMapConfigWriter : IMapConfigReader
     Task<bool> WriteAsync(MapConfig config, CancellationToken cancellationToken = default);
 }
 
-public class MapConfigWriter : MapConfigReader, IMapConfigWriter
+public class MapConfigWriter(IMongoCollection<MapConfig> collection) : MapConfigReader(collection), IMapConfigWriter
 {
-    public MapConfigWriter(IMongoCollection<MapConfig> collection) : base(collection)
-    { }
-
     public async Task<bool> WriteAsync(MapConfig config, CancellationToken cancellationToken = default)
     {
         var update = Builders<MapConfig>.Update

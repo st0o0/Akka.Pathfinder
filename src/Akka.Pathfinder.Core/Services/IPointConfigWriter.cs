@@ -9,11 +9,8 @@ public interface IPointConfigWriter : IPointConfigReader
     public Task AddPointConfigAsync(Guid collectionId, PointConfig pointConfig, CancellationToken cancellationToken = default);
 }
 
-public class PointConfigWriter : PointConfigReader, IPointConfigWriter
+public class PointConfigWriter(IMongoDatabase database) : PointConfigReader(database), IPointConfigWriter
 {
-    public PointConfigWriter(IMongoDatabase database) : base(database)
-    { }
-
     public async Task AddPointConfigsAsync(Guid collectionId, List<PointConfig> pointConfigs, CancellationToken cancellationToken = default)
     {
         var collection = Database.GetCollection<PointConfig>(collectionId.ToString());

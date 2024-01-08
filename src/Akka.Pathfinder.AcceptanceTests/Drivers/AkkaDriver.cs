@@ -8,6 +8,7 @@ using Akka.Pathfinder.Core.Services;
 using Akka.Remote.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Moin.Core;
 using MongoDB.Driver;
 
 namespace Akka.Pathfinder.AcceptanceTests.Drivers;
@@ -34,11 +35,11 @@ public class AkkaDriver : Hosting.TestKit.TestKit
             .WithRemoting("0.0.0.0", Port, Hostname)
             .WithClustering(new ClusterOptions
             {
-                Roles = new[] { "LULW" },
-                SeedNodes = new[]
-                {
+                Roles = ["LULW"],
+                SeedNodes =
+                [
                     $"akka.tcp://{_actorSystemName}@{LighthouseNodeContainer.Hostname}:{LighthouseNodeContainer.Port}"
-                }
+                ]
             });
 
         ConfigureAkkaServices(builder);
@@ -47,8 +48,8 @@ public class AkkaDriver : Hosting.TestKit.TestKit
     protected static void ConfigureAkkaServices(AkkaConfigurationBuilder builder)
     {
         builder
-            .WithShardRegionProxy<PathfinderProxy>("PathfinderWorker", "KEKW", new MessageExtractor())
-            .WithSingletonProxy<MapManagerProxy>("MapManager", new ClusterSingletonOptions() { Role = "KEKW" });
+        .AddClientEndpoint(Endpoints.MapManager)
+        .AddClientEndpoint(Endpoints.PathfinderWorker);
     }
 
     protected override void ConfigureServices(HostBuilderContext _, IServiceCollection services)

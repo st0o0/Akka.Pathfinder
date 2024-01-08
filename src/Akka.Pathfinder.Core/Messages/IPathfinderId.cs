@@ -1,3 +1,5 @@
+using Moin.Core;
+
 namespace Akka.Pathfinder.Core.Messages;
 
 public interface IPathfinderId : IEntityId

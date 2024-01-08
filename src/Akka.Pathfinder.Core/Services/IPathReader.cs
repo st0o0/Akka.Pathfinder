@@ -12,12 +12,9 @@ public interface IPathReader
     Task<IEnumerable<Path>> GetByPathfinderIdAsync(Guid pathfinderId, CancellationToken cancellationToken = default);
 }
 
-public class PathReader : IPathReader
+public class PathReader(IMongoCollection<Path> collection) : IPathReader
 {
-    public PathReader(IMongoCollection<Path> collection)
-        => Collection = collection;
-
-    protected IMongoCollection<Path> Collection { get; }
+    protected IMongoCollection<Path> Collection { get; } = collection;
 
     public IMongoQueryable<Path> Get()
         => Collection.AsQueryable();

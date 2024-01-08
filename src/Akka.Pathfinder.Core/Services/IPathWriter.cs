@@ -8,10 +8,8 @@ public interface IPathWriter : IPathReader
     public bool Write(Path path, CancellationToken cancellationToken = default);
 }
 
-public class PathWriter : PathReader, IPathWriter
+public class PathWriter(IMongoCollection<Path> collection) : PathReader(collection), IPathWriter
 {
-    public PathWriter(IMongoCollection<Path> collection) : base(collection) { }
-
     public bool Write(Path path, CancellationToken cancellationToken = default)
     {
         var update = Builders<Path>.Update

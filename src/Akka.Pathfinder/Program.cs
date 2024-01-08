@@ -17,6 +17,7 @@ using Akka.Pathfinder;
 using Akka.Hosting;
 using Serilog;
 using Path = Akka.Pathfinder.Core.Persistence.Data.Path;
+using Moin.Core;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
@@ -60,6 +61,14 @@ builder.Services.WithAkkaHealthCheck(HealthCheckType.All)
             AutoInitialize = true
         };
 
+        var shardSettings = new ShardSettings()
+        {
+            JournalOptions = shardingJournalOptions,
+            SnapshotOptions = shardingSnapshotOptions,
+            MaxShards = 150,
+            ShouldPassivateIdleEntities = true
+        };
+
         builder.ConfigureLoggers(setup =>
             {
                 // Clear all loggers
@@ -75,33 +84,19 @@ builder.Services.WithAkkaHealthCheck(HealthCheckType.All)
             .WithRemoting("0.0.0.0", 1337, "127.0.0.1")
             .WithClustering(new ClusterOptions
             {
-                Roles = new[] { "KEKW" },
-                SeedNodes = new[] { "akka.tcp://Zeus@127.0.0.1:42000" }
+                Roles = ["KEKW"],
+                SeedNodes = ["akka.tcp://Zeus@127.0.0.1:42000"]
             })
             .WithSqlPersistence(connectionString!, LinqToDB.ProviderName.PostgreSQL15, PersistenceMode.Both, autoInitialize: true, tagStorageMode: TagMode.Both)
             .WithJournalAndSnapshot(shardingJournalOptions, shardingSnapshotOptions)
-            .WithShardRegion<PointWorker>("PointWorker", (_, _, dependecyResolver) => x => dependecyResolver.Props<PointWorker>(x), new MessageExtractor(3000), new ShardOptions()
-            {
-                JournalOptions = shardingJournalOptions,
-                SnapshotOptions = shardingSnapshotOptions,
-                Role = "KEKW",
-                ShouldPassivateIdleEntities = true,
-                PassivateIdleEntityAfter = TimeSpan.FromMinutes(1)
-            })
-            .WithShardRegionProxy<PointWorkerProxy>("PointWorker", "KEKW", new MessageExtractor(3000))
-            .WithShardRegion<PathfinderWorker>("PathfinderWorker", (_, _, dependecyResolver) => x => dependecyResolver.Props<PathfinderWorker>(x), new MessageExtractor(), new ShardOptions()
-            {
-                JournalOptions = shardingJournalOptions,
-                SnapshotOptions = shardingSnapshotOptions,
-                Role = "KEKW",
-                ShouldPassivateIdleEntities = true,
-                PassivateIdleEntityAfter = TimeSpan.FromMinutes(1)
-            })
-            .WithShardRegionProxy<PathfinderProxy>("PathfinderWorker", "KEKW", new MessageExtractor())
-            .WithSingleton<MapManager>("MapManager", (_, _, dependecyResolver) => dependecyResolver.Props<MapManager>(), new ClusterSingletonOptions() { Role = "KEKW" }, false)
-            .WithSingletonProxy<MapManagerProxy>("MapManager", new ClusterSingletonOptions() { Role = "KEKW" })
-            .WithSingleton<SenderManager>("SenderManager", (_, _, dependecyResolver) => dependecyResolver.Props<SenderManager>(), new ClusterSingletonOptions() { Role = "KEKW" }, false)
-            .WithSingletonProxy<SenderManagerProxy>("SenderManager", new ClusterSingletonOptions() { Role = "KEKW" });
+            .AddServiceEndpoint<PointWorker>(Endpoints.PointWorker, shardSettings)
+            .AddClientEndpoint(Endpoints.PointWorker)
+            .AddServiceEndpoint<PathfinderWorker>(Endpoints.PathfinderWorker, shardSettings)
+            .AddClientEndpoint(Endpoints.PathfinderWorker)
+            .AddServiceEndpoint<MapManager>(Endpoints.MapManager, new SingletonSettings())
+            .AddClientEndpoint(Endpoints.MapManager)
+            .AddServiceEndpoint<SenderManager>(Endpoints.SenderManager, new SingletonSettings())
+            .AddClientEndpoint(Endpoints.SenderManager);
     });
 
 
